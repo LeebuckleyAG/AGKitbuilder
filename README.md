@@ -8,6 +8,7 @@ A guided bundle builder: category-by-category product selection, variant pickers
 |---|---|
 | `sections/kit-builder.liquid` | `sections/` (markup, scoped CSS, schema) |
 | `assets/kit-builder.js` | `assets/` (the `<kit-builder>` custom element, no dependencies) |
+| `assets/kit-builder-cart.js` | `assets/` (cart + pricing integration adapters; imported by the file above) |
 | `templates/page.kit-builder.json` | `templates/` (optional page template preloaded with the six steps) |
 
 ## Add it to a page
@@ -40,7 +41,7 @@ Each kit line carries `Kit` (visible), and hidden `_kit_key`, `_kit_id`, `_kit_c
 
 ## Testing
 
-Local jsdom suite (28 checks) covers selection, swap, limits, skip, variant availability, fixed pricing, launch gating, one-kit and currency checks, validation, payload and properties, double-submit, API errors, remove/edit, persistence and HTML escaping. Theme Check reports no schema offences. Not yet exercised in a live Horizon preview: the cart-drawer refresh, visual styling against your colour schemes, and the Function pairing. Check those first on the draft theme.
+Local jsdom suite (33 checks) plus a Liquid render check that the config JSON is valid. Covers selection, swap, limits, skip, variant availability, fixed pricing, launch gating, one-kit and currency checks, validation, payload and properties, double-submit, API errors, remove/edit, persistence and HTML escaping. Theme Check reports no schema offences. Not yet exercised in a live Horizon preview: the cart-drawer refresh, visual styling against your colour schemes, and the Function pairing. Check those first on the draft theme.
 
 ## Limitations
 

@@ -24,37 +24,53 @@
 | Launch gate | "Checkout pricing status": **Preview** (add to cart disabled, default), **Testing** (enabled, amber test banner), **Live**. Only switch to Live after the verification below passes |
 | Cart lines | One `/cart/add.js` request, 6 lines, qty 1, properties `Kit` (visible), `_kit_key`, `_kit_id`, `_kit_category` (hidden) |
 
-## Investigation: how to get a real £99 at checkout
+## Pricing integration (investigated 18 Nov 2026)
 
-**What I found on the store (18 Nov 2026):** Discounts is empty. The discount-type picker offers only Shopify's native types plus Judge.me. **No discount Function is installed on this store.** I also have no evidence the earlier tiered-bundle Function supports fixed bundle prices, so I have not assumed it does.
+**Store facts:** Shopify Basic plan. Discounts page is empty and the discount-type picker shows only native types plus Judge.me, so **no Function or bundle app is installed**. Custom apps containing Functions need Plus; public apps with Functions work on every plan.
 
-| Option | Fixed £99 for mix-and-match? | Notes |
-|---|---|---|
-| Native automatic discounts (amount off products, buy X get Y, amount off order) | No | Fixed amounts or percentages only; can't target "one from each of six collections" and land on a fixed total |
-| Shopify Bundles app | Unconfirmed | Built for defined bundles. I haven't verified it supports six independent slots with choice at a fixed total; check before ruling in or out |
-| **Product Discount Function (recommended)** | **Yes, if components total at least £99** | Targets the six kit lines (qty 1 each) with a per-line fixed amount off so the six lines sum to exactly £99; rounding remainder on the last line. Keeps six real lines, variant IDs and inventory |
-| Cart Transform (merge/expand to a £99 bundle parent) | Yes | Can price independently of components but is more complex; the `update` operation is Plus-only. Not needed for v1 |
+**Options**
 
-**Plan constraint to confirm:** per Shopify's docs, custom apps containing Functions require Shopify Plus; other plans need a public App Store app. Confirm whether Online Golf is on Plus, and who will build/host the Function. This decides whether a custom app is possible.
+| Option | Verdict |
+|---|---|
+| Native automatic discounts | Can't express "one from each of six collections for a fixed total" |
+| Shopify Bundles (free) | Fixed bundles and multipacks only; no mix-and-match |
+| Custom Function (our own app) | Needs Plus. Contract kept below for an upgrade |
+| **Third-party bundle app with a bring-your-own-UI contract** | **Only route that works on Basic today** |
 
-### Recommended Function contract
+**Apps that publicly support a custom UI (none installed, none verified by me in a store):**
+- **Appstle Bundles:** documents a "build a box" fixed-price contract for custom themes: a priced box line plus component lines discounted 100% by an automatic discount, inventory kept on the components. Pricing and plan requirements not confirmed from the sources I read.
+- **Flex Bundles:** custom mix-and-match on Shopify's Cart Transform API with your own front end; listing shows from $99/month.
+- **Kitenzo Bundle Builder:** theme, Hydrogen and headless API.
+- Bundly (from $29/month) is mix-and-match with fixed price, but uses its own widget rather than a custom UI.
 
-Config comes from the Function (metafield), never from the browser.
+**Recommendation:** evaluate **Appstle first** because its documented contract matches this build and keeps component variants and inventory real. Nothing is installed or purchased until you approve. Flex Bundles is the fallback.
 
-1. Group cart lines by `_kit_id` where `_kit_key == "six-piece-kit"`.
-2. Valid group = exactly six lines, qty 1, one per `_kit_category` required category. Otherwise apply nothing.
-3. Only the **first** valid group is discounted (second kit stays full price, see one kit per order).
-4. `discount = sum(line prices) - 9900`. If `<= 0`, apply nothing (and see below).
-5. Spread `discount` across the six lines with per-line `fixedAmount` (not per item), remainder to the last line so the total is exact.
-6. `combinesWith`: none, so discount codes and other automatic discounts cannot take the kit below £99.
-7. Title shown at checkout: e.g. "6-piece kit price".
+### How the integration layer works (built)
 
-**Critical limitation:** a discount cannot raise a price. If an eligible set totals under £99, checkout charges more than £99. Controls: (a) the builder refuses sets under £99; (b) before launch, check that the cheapest possible choice in each step still sums to at least £99 (list min price per collection); (c) if that can't be guaranteed, use Cart Transform pricing instead.
+`assets/kit-builder-cart.js` holds all cart and pricing logic; the UI never changes when pricing does. Section setting **Pricing integration** selects an adapter:
 
-### Gaps that need Functions (client code alone can't enforce them)
+- `properties` (default): six component lines with `Kit`, `_kit_key`, `_kit_id`, `_kit_category`. For a checkout Function (Plus) or an app that reads them. Because a discount can only lower prices, the builder refuses sets totalling under £99.
+- `appstle`: one box line (the £99 "Kit box product" variant) plus six child lines, using Appstle's documented properties (`_appstle-bb-id`, `_appstle_bundles_type`, `__appstle-bb-variants`, `_appstle-bb-child`, `_appstle_bundle_instance_id`). Price is exact whatever the items cost, so the under-£99 refusal is off. **Written from Appstle's docs, never run against the installed app.**
 
-- **One kit per order:** the builder checks the cart on add, but a customer can raise a line quantity or add a second kit another way. Needs a Cart and Checkout Validation Function (availability/plan: confirm) or at minimum step 3 above so a second kit isn't discounted.
-- **Removing one component** leaves five lines at full price (group invalid so no discount). Acceptable, but consider validation to block checkout with a broken kit.
+To add another app (e.g. Flex), add an adapter object in `kit-builder-cart.js` (`build`, `ready`, `guardsFloor`).
+
+### Setup for the Appstle adapter (once approved)
+
+1. Create a "6-Piece Kit" product at £99, one variant, not in any collection shown to customers.
+2. In Appstle create a fixed-price build-a-box rule with the six collections (1 each) and inventory mode "add child product on checkout" so component lines exist.
+3. In the section set Pricing integration = Appstle, Kit box product = that product, Bundle reference = the rule's `uniqueRef`.
+4. Keep status on Preview, then Testing, and run the checklist below.
+
+### Cart safety built in
+
+- Stock is re-checked live (`/products/{handle}.js`) just before adding; the add request is atomic and any partial add is rolled back.
+- One kit per order: add is refused when a `_kit_key` line is already in the cart, with a "Replace my kit" action.
+- Items are added in one request, qty 1 each.
+
+### Still not enforceable from the theme (needs the integration/app)
+
+- Customer raising a kit line quantity or adding a second kit by another route: confirm the chosen app discounts only one kit and blocks extra quantity.
+- Per-step limits (one jacket etc.) are enforced by the builder UI only; confirm the app rule enforces them too.
 
 ## Verification before "Live" (all must pass, on the draft theme, in real checkout)
 

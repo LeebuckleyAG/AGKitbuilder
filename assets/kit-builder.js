@@ -1,8 +1,10 @@
 /**
  * <kit-builder> custom element for the Kit builder section (Horizon theme).
  * Data comes from JSON script tags rendered by sections/kit-builder.liquid.
- * No dependencies. Prices are minor units (pence/cents), as in `product | json`.
+ * Cart/pricing integration lives in kit-builder-cart.js. No dependencies. Prices are minor units (pence/cents), as in `product | json`.
  */
+import { getAdapter, getCart, kitLinesIn, removeLines, checkAvailability, addLines, refreshCart } from './kit-builder-cart.js';
+
 const ESC = { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' };
 const esc = (v) => String(v ?? '').replace(/[&<>"']/g, (c) => ESC[c]);
 const reduceMotion = () => window.matchMedia('(prefers-reduced-motion: reduce)').matches;
@@ -78,6 +80,9 @@ const DEFAULT_LABELS = {
   wrongCurrency: 'The kit is only available in {currency}.',
   alreadyKit: 'Your cart already contains a kit. Only one kit can be ordered at a time.',
   alreadyIn: 'Already in your kit ({category})',
+  replaceKit: 'Replace my kit',
+  nowUnavailable: '{items} just sold out. Please change your choice.',
+  notConfigured: 'This kit is not available to order yet.',
   cartCheckFailed: 'We could not check your cart. Please try again.',
 };
 
@@ -225,7 +230,7 @@ class KitBuilder extends HTMLElement {
     if (this.cfg.maxTotal && total > this.cfg.maxTotal)
       errors.push({ step: this.cats.length, msg: tpl(this.L.kitMax, { n: this.cfg.maxTotal }) });
     if (!total && !errors.length) errors.push({ step: 0, msg: tpl(this.L.missing, { category: this.cats[0].title, n: 1 }) });
-    if (this.cfg.mode === 'fixed' && total && !errors.length) {
+    if (this.cfg.mode === 'fixed' && total && !errors.length && getAdapter(this.cfg).guardsFloor) {
       const sum = items.reduce((a, it) => a + it.variant.price, 0);
       if (sum < this.cfg.fixedPrice) errors.push({ step: this.cats.length, msg: this.L.belowPrice });
     }
@@ -556,7 +561,11 @@ class KitBuilder extends HTMLElement {
         : '';
 
     const errs = this.errors.length
-      ? `<ul class="kb__errors" role="alert">${this.errors.map((e) => `<li>${esc(e.msg)}</li>`).join('')}</ul>`
+      ? `<ul class="kb__errors" role="alert">${this.errors.map((e) => `<li>${esc(e.msg)}</li>`).join('')}</ul>${
+          this.offerReplace
+            ? `<button type="button" class="kb__link" data-action="replace-kit">${esc(this.L.replaceKit)}</button>`
+            : ''
+        }`
       : '<ul class="kb__errors" role="alert"></ul>';
     const ok = this.success
       ? `<p class="kb__success" role="status">${esc(this.L.added)} <a href="${esc(this.cfg.cartUrl)}">${esc(this.L.viewCart)}</a></p>`
@@ -659,6 +668,9 @@ class KitBuilder extends HTMLElement {
         break;
       case 'add-kit':
         this.addKit();
+        break;
+      case 'replace-kit':
+        this.replaceKit();
         break;
     }
   }
@@ -768,6 +780,7 @@ class KitBuilder extends HTMLElement {
 
   async addKit() {
     if (this.submitting) return;
+    const adapter = getAdapter(this.cfg);
     const errors = this.validate();
     if (errors.length) {
       this.errors = errors;
@@ -778,66 +791,77 @@ class KitBuilder extends HTMLElement {
       return;
     }
     if (this.cfg.pricingStatus === 'preview') return;
-    if (this.cfg.kitCurrency && this.cfg.currency !== this.cfg.kitCurrency) {
-      this.errors = [{ step: this.step, msg: tpl(this.L.wrongCurrency, { currency: this.cfg.kitCurrency }) }];
+    const fail = (msg, extra = {}) => {
+      this.submitting = false;
+      this.errors = [{ step: this.step, msg, ...extra }];
       this.renderSummary();
-      return;
-    }
+      this.announce(msg);
+    };
+    const notReady = adapter.ready(this.cfg);
+    if (notReady) return fail(notReady);
+    if (this.cfg.kitCurrency && this.cfg.currency !== this.cfg.kitCurrency)
+      return fail(tpl(this.L.wrongCurrency, { currency: this.cfg.kitCurrency }));
+
     this.submitting = true;
     this.errors = [];
     this.renderSummary();
-    if (this.cfg.oneKitPerOrder) {
-      try {
-        const root = this.cfg.rootUrl.endsWith('/') ? this.cfg.rootUrl : this.cfg.rootUrl + '/';
-        const cartRes = await fetch(`${root}cart.js`, { headers: { Accept: 'application/json' } });
-        if (!cartRes.ok) throw new Error('cart');
-        const cart = await cartRes.json();
-        if ((cart.items || []).some((i) => i.properties && i.properties._kit_key)) {
-          this.submitting = false;
-          this.errors = [{ step: this.step, msg: this.L.alreadyKit }];
-          this.renderSummary();
-          this.announce(this.L.alreadyKit);
-          return;
-        }
-      } catch (e) {
-        this.submitting = false;
-        this.errors = [{ step: this.step, msg: this.L.cartCheckFailed }];
-        this.renderSummary();
-        return;
-      }
-    }
-    const kitId = uid();
-    const lines = this.items().map((it) => ({
-      id: it.variant.id,
-      quantity: 1,
-      properties: {
-        Kit: this.cfg.kitName,
-        _kit_id: kitId,
-        _kit_key: this.cfg.kitKey,
-        _kit_category: this.cats.find((c) => c.id === it.catId).title,
-      },
-    }));
     try {
-      const res = await fetch(`${this.cfg.cartAddUrl}.js`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
-        body: JSON.stringify({ items: lines }),
-      });
-      const data = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error(data.description || data.message || this.L.genericError);
+      if (this.cfg.oneKitPerOrder) {
+        let cart;
+        try {
+          cart = await getCart(this.cfg);
+        } catch (e) {
+          return fail(this.L.cartCheckFailed);
+        }
+        if (kitLinesIn(cart).length) {
+          this.offerReplace = true;
+          return fail(this.L.alreadyKit);
+        }
+      }
+      const picked = this.items().map((it) => ({
+        variantId: it.variant.id,
+        title: it.product.title,
+        handle: it.product.handle,
+        category: this.cats.find((c) => c.id === it.catId).title,
+      }));
+      const gone = await checkAvailability(this.cfg, picked);
+      if (gone.length) {
+        // Reflect live stock in the UI so the customer can pick something else.
+        gone.forEach((t) => {
+          const it = this.items().find((x) => x.product.title === t);
+          if (it) it.variant.available = false;
+        });
+        this.render();
+        return fail(tpl(this.L.nowUnavailable, { items: gone.join(', ') }));
+      }
+      const kitId = uid();
+      const lines = adapter.build({ cfg: this.cfg, kitId, items: picked });
+      await addLines(this.cfg, lines, kitId, this.L.genericError);
       this.sel = [];
       this.draft = {};
       this.success = true;
+      this.offerReplace = false;
       this.persist();
       this.submitting = false;
       this.render();
       this.announce(this.L.added);
-      await this.refreshCart();
+      await refreshCart(this.cfg);
     } catch (err) {
-      this.submitting = false;
-      this.errors = [{ step: this.step, msg: err && err.message ? err.message : this.L.genericError }];
+      fail(err && err.message ? err.message : this.L.genericError);
+    }
+  }
+
+  async replaceKit() {
+    if (this.submitting) return;
+    try {
+      const cart = await getCart(this.cfg);
+      await removeLines(this.cfg, kitLinesIn(cart));
+      this.offerReplace = false;
+      this.errors = [];
+      await this.addKit();
+    } catch (e) {
+      this.errors = [{ step: this.step, msg: this.L.cartCheckFailed }];
       this.renderSummary();
-      this.announce(this.errors[0].msg);
     }
   }
 
@@ -845,42 +869,6 @@ class KitBuilder extends HTMLElement {
     if (step !== this.step) this.goTo(step);
     this.errors = errors;
     this.render();
-  }
-
-  /** Refresh Horizon's cart drawer and bubble, then open the drawer. Falls back to the cart page. */
-  async refreshCart() {
-    const goCart = () => window.location.assign(this.cfg.cartUrl);
-    if (this.cfg.afterAdd === 'cart') return goCart();
-    try {
-      const drawer = document.querySelector('cart-drawer-component');
-      if (!drawer) return goCart();
-      const sectionOf = (el) => {
-        const wrap = el && el.closest('.shopify-section');
-        return wrap ? wrap.id.replace(/^shopify-section-/, '') : null;
-      };
-      const ids = [sectionOf(drawer), sectionOf(document.querySelector('.cart-bubble'))].filter(Boolean);
-      const unique = [...new Set(ids)];
-      if (unique.length) {
-        const root = this.cfg.rootUrl.endsWith('/') ? this.cfg.rootUrl : this.cfg.rootUrl + '/';
-        const res = await fetch(`${root}?sections=${encodeURIComponent(unique.join(','))}`);
-        if (res.ok) {
-          const sections = await res.json();
-          Object.values(sections).forEach((html) => {
-            const doc = new DOMParser().parseFromString(html, 'text/html');
-            ['cart-items-component', '.cart-bubble'].forEach((sel) => {
-              const fresh = doc.querySelector(sel);
-              const current = document.querySelector(sel);
-              if (fresh && current) current.replaceWith(fresh);
-            });
-          });
-        }
-      }
-      document.dispatchEvent(new CustomEvent('cart:update', { bubbles: true, detail: { source: 'kit-builder' } }));
-      if (typeof drawer.open === 'function') drawer.open();
-      else goCart();
-    } catch (e) {
-      goCart();
-    }
   }
 }
 
