@@ -39,6 +39,9 @@
               {%- endfor -%}
             </ol>
           {%- endif -%}
+          {%- if s.pricing_mode == 'fixed' -%}
+            <p class="kb__hero-price"><strong>{{ s.fixed_price | times: 100 | round | money_without_trailing_zeros }}</strong> for all six pieces</p>
+          {%- endif -%}
           {%- if s.savings_message != blank -%}<p class="kb__savings-pill">{{ s.savings_message }}</p>{%- endif -%}
           <a class="button kb__cta" href="#{{ anchor_id }}-builder" data-kit-start>{{ s.cta_label }}</a>
         </div>
@@ -88,13 +91,14 @@
       "cartUrl": {{ routes.cart_url | json }},
       "rootUrl": {{ routes.root_url | json }},
       "afterAdd": {{ s.after_add | json }},
+      "pricingStatus": {{ s.pricing_status | json }},
+      "kitCurrency": {{ s.kit_currency | json }},
+      "oneKitPerOrder": {{ s.one_kit_per_order | json }},
+      "uniqueAcrossCategories": {{ s.unique_across_categories | json }},
       "minTotal": {{ s.min_kit_size | json }},
       "maxTotal": {{ s.max_kit_size | json }},
       "mode": {{ s.pricing_mode | json }},
       "fixedPrice": {{ s.fixed_price | times: 100 | round | json }},
-      "percentOff": {{ s.percent_off | json }},
-      "amountOff": {{ s.amount_off | times: 100 | round | json }},
-      "minSpend": {{ s.min_spend | times: 100 | round | json }},
       "savingsMessage": {{ s.savings_message | json }},
       "showItemPrices": {{ s.show_item_prices | json }},
       "showOriginalValue": {{ s.show_original_value | json }},
@@ -172,6 +176,13 @@
   .kb__how { display: flex; flex-wrap: wrap; gap: 8px 24px; margin: 0 0 20px; padding: 0; list-style: none; counter-reset: kbstep; font-size: 0.9rem; }
   .kb__how li { counter-increment: kbstep; display: flex; align-items: center; gap: 8px; }
   .kb__how li::before { content: counter(kbstep); display: grid; place-items: center; width: 22px; height: 22px; border: 1px solid currentColor; border-radius: 50%; font-size: 0.75rem; }
+  .kb__hero-price { margin: 0 0 16px; font-size: 1rem; }
+  .kb__hero-price strong { font-size: clamp(2rem, 5vw, 3rem); font-family: var(--font-heading--family, inherit); line-height: 1; margin-right: 6px; }
+  .kb__pricebar { margin: 0 0 12px; font-size: 0.9rem; color: var(--kb-muted); }
+  .kb__pricebar strong { font-size: 1.5rem; color: var(--color-foreground, #111); font-family: var(--font-heading--family, inherit); }
+  .kb__kitprice { margin: 0 0 10px; font-size: 0.85rem; color: var(--kb-muted); }
+  .kb__kitprice strong { font-size: 2rem; color: var(--color-foreground, #111); font-family: var(--font-heading--family, inherit); }
+  .kb__test { margin: 0 0 10px; padding: 8px 10px; background: #fef3c7; color: #7a4b00; font-size: 0.8rem; }
   .kb__savings-pill { display: inline-block; margin: 0 0 20px; padding: 6px 12px; border: 1px solid var(--kb-border); font-size: 0.8rem; letter-spacing: 0.04em; }
   .kb__hero-media { aspect-ratio: 4 / 3; overflow: hidden; }
   .kb__hero-img { width: 100%; height: 100%; object-fit: cover; display: block; }
@@ -295,10 +306,10 @@
     { "type": "header", "content": "Hero" },
     { "type": "checkbox", "id": "show_hero", "label": "Show intro hero", "default": true },
     { "type": "text", "id": "eyebrow", "label": "Eyebrow", "default": "Build your own kit" },
-    { "type": "text", "id": "heading", "label": "Heading", "default": "Build Your Kit" },
-    { "type": "textarea", "id": "subheading", "label": "Subheading", "default": "Choose your favourite pieces, category by category, and save on the complete set." },
-    { "type": "textarea", "id": "how_it_works", "label": "How it works", "info": "One step per line.", "default": "Pick a piece from each category\nChoose your size and colour\nAdd the complete kit to your bag" },
-    { "type": "text", "id": "savings_message", "label": "Savings message", "info": "Only shown if you have a matching discount set up (see README).", "default": "Save when you complete your kit" },
+    { "type": "text", "id": "heading", "label": "Heading", "default": "Build Your 6-Piece Kit" },
+    { "type": "textarea", "id": "subheading", "label": "Subheading", "default": "Choose six pieces, one step at a time, for one fixed price." },
+    { "type": "textarea", "id": "how_it_works", "label": "How it works", "info": "One step per line.", "default": "Choose a piece for each step\nPick your size and colour\nAdd the complete kit for one fixed price" },
+    { "type": "text", "id": "savings_message", "label": "Savings message", "info": "Shown in the hero. Only claim savings the checkout really gives.", "default": "Six pieces, one fixed price" },
     { "type": "text", "id": "cta_label", "label": "Button label", "default": "Build your kit" },
     { "type": "image_picker", "id": "hero_image", "label": "Image" },
 
@@ -308,29 +319,37 @@
     { "type": "range", "id": "padding_bottom", "label": "Bottom padding", "min": 0, "max": 120, "step": 4, "unit": "px", "default": 40 },
 
     { "type": "header", "content": "Kit rules" },
-    { "type": "text", "id": "kit_name", "label": "Kit name", "info": "Shown on cart lines as 'Kit'.", "default": "My Kit" },
-    { "type": "text", "id": "kit_key", "label": "Kit key", "info": "Unique ID used by the checkout discount (e.g. fazer-champion-pack). Don't change after launch.", "default": "my-kit" },
+    { "type": "text", "id": "kit_name", "label": "Kit name", "info": "Shown on cart lines as 'Kit'.", "default": "6-Piece Kit" },
+    { "type": "text", "id": "kit_key", "label": "Kit key", "info": "Unique ID used by the checkout discount (e.g. fazer-champion-pack). Don't change after launch.", "default": "six-piece-kit" },
     { "type": "range", "id": "min_kit_size", "label": "Minimum kit size", "info": "0 = determined by categories.", "min": 0, "max": 30, "step": 1, "default": 0 },
     { "type": "range", "id": "max_kit_size", "label": "Maximum kit size", "info": "0 = unlimited.", "min": 0, "max": 30, "step": 1, "default": 0 },
 
     { "type": "header", "content": "Pricing" },
     {
       "type": "select", "id": "pricing_mode", "label": "Bundle pricing mode",
-      "info": "Display only. The matching discount must exist in Shopify; see README.",
+      "info": "Display only. Must match the checkout discount; see SPEC.md.",
       "options": [
         { "value": "none", "label": "Individual product pricing" },
-        { "value": "fixed", "label": "Fixed bundle price" },
-        { "value": "percent", "label": "Percentage discount" },
-        { "value": "amount", "label": "Fixed amount discount" }
+        { "value": "fixed", "label": "Fixed bundle price" }
       ],
-      "default": "none"
+      "default": "fixed"
     },
-    { "type": "text", "id": "fixed_price", "label": "Fixed bundle price", "info": "In store currency, e.g. 99.99", "default": "99.99" },
-    { "type": "range", "id": "percent_off", "label": "Percentage discount", "min": 0, "max": 80, "step": 1, "unit": "%", "default": 10 },
-    { "type": "text", "id": "amount_off", "label": "Amount discount", "info": "In store currency, e.g. 20", "default": "20" },
-    { "type": "text", "id": "min_spend", "label": "Minimum spend for discount", "info": "In store currency. 0 = none", "default": "0" },
+    {
+      "type": "select", "id": "pricing_status", "label": "Checkout pricing status",
+      "info": "Preview: add to cart disabled. Testing: enabled with a test banner. Live only after checkout pricing is verified (see SPEC.md).",
+      "options": [
+        { "value": "preview", "label": "Preview (add to cart disabled)" },
+        { "value": "testing", "label": "Testing (enabled, test banner)" },
+        { "value": "live", "label": "Live (checkout price verified)" }
+      ],
+      "default": "preview"
+    },
+    { "type": "text", "id": "kit_currency", "label": "Kit currency", "info": "Kit can only be added in this currency.", "default": "GBP" },
+    { "type": "checkbox", "id": "one_kit_per_order", "label": "Allow one kit per order", "default": true },
+    { "type": "checkbox", "id": "unique_across_categories", "label": "Same product can't fill two categories", "default": true },
+    { "type": "text", "id": "fixed_price", "label": "Fixed bundle price", "info": "In store currency, e.g. 99", "default": "99" },
     { "type": "checkbox", "id": "show_item_prices", "label": "Show prices on product cards", "default": true },
-    { "type": "checkbox", "id": "show_original_value", "label": "Show original value", "default": true },
+    { "type": "checkbox", "id": "show_original_value", "label": "Show combined retail value (only when it exceeds the kit price)", "default": true },
 
     { "type": "header", "content": "Layout and UX" },
     { "type": "range", "id": "columns_desktop", "label": "Desktop columns", "min": 2, "max": 4, "step": 1, "default": 3 },
@@ -377,11 +396,12 @@
     {
       "name": "Kit builder",
       "blocks": [
-        { "type": "category", "settings": { "title": "Outerwear", "min": 1, "max": 1 } },
-        { "type": "category", "settings": { "title": "Midlayer", "min": 2, "max": 2 } },
-        { "type": "category", "settings": { "title": "Polos", "min": 3, "max": 3 } },
-        { "type": "category", "settings": { "title": "Trousers", "min": 1, "max": 1 } },
-        { "type": "category", "settings": { "title": "Accessories", "min": 2, "max": 2, "required": false } }
+        { "type": "category", "settings": { "title": "Jacket or gilet", "min": 1, "max": 1 } },
+        { "type": "category", "settings": { "title": "Midlayer or polo", "min": 1, "max": 1 } },
+        { "type": "category", "settings": { "title": "Additional polo", "min": 1, "max": 1 } },
+        { "type": "category", "settings": { "title": "Trousers or shorts", "min": 1, "max": 1 } },
+        { "type": "category", "settings": { "title": "Belt or hat", "min": 1, "max": 1 } },
+        { "type": "category", "settings": { "title": "Socks", "min": 1, "max": 1 } }
       ]
     }
   ]

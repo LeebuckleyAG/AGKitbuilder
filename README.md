@@ -8,7 +8,7 @@ A guided bundle builder: category-by-category product selection, variant pickers
 |---|---|
 | `sections/kit-builder.liquid` | `sections/` (markup, scoped CSS, schema) |
 | `assets/kit-builder.js` | `assets/` (the `<kit-builder>` custom element, no dependencies) |
-| `templates/page.kit-builder.json` | `templates/` (optional page template preloaded with 5 example categories) |
+| `templates/page.kit-builder.json` | `templates/` (optional page template preloaded with the six steps) |
 
 ## Add it to a page
 
@@ -28,25 +28,11 @@ Category blocks (title, heading, description, collection, min, max, required, du
 
 ## Pricing and discounts
 
-The section never changes what the customer pays. It only **displays** the kit price for the mode you choose (none / fixed / percent / amount, plus minimum spend). The checkout price comes from a Shopify discount, so the two must match.
+Fixed £99 six-piece kit. See **SPEC.md** for the commercial rules, the investigation of checkout pricing options, the recommended Function contract, and the verification checklist.
 
-Every kit line is added with these line item properties:
+Short version: the section only *displays* the price. The £99 charge at checkout needs a Shopify Function; **none is installed on this store yet**. "Checkout pricing status" defaults to **Preview** (add to cart disabled). Use **Testing** to run the verification, and **Live** only once every check passes.
 
-- `Kit`: visible kit name (cart/checkout/order)
-- `_kit_key`: the "Kit key" setting (hidden). Use it to tell the Function which kit this is
-- `_kit_id`: unique per add-to-cart (hidden). Groups the lines of one kit instance
-- `_kit_category`: hidden, the category title
-
-Recommended implementation (agreed): reuse the existing tiered bundle discount Shopify Function. It should:
-
-1. Find cart lines with `_kit_key == <this kit>`, grouped by `_kit_id`.
-2. Only discount a group when every required category is present (match `_kit_category`).
-3. Take the discount **from its own configuration** (fixed price / % / amount). Never trust a price sent from the browser.
-4. Spread a fixed bundle price across the lines proportionally.
-
-Keep the section's pricing settings equal to the Function's configuration. Messages like "You save" appear only when the kit is complete, matching when the Function applies. Until the Function exists, leave **Bundle pricing mode** on "Individual product pricing" so nothing fake is shown.
-
-Alternative without a Function: an automatic Shopify discount (percentage/fixed amount on a collection or buy X get Y). It can't produce a fixed bundle price.
+Each kit line carries `Kit` (visible), and hidden `_kit_key`, `_kit_id`, `_kit_category`.
 
 ## Cart behaviour
 
@@ -54,7 +40,7 @@ Alternative without a Function: an automatic Shopify discount (percentage/fixed 
 
 ## Testing
 
-Local jsdom suite (21 checks) covers selection, swap, limits, skip, variant availability, pricing modes, validation, payload and properties, double-submit, API errors, remove/edit, persistence and HTML escaping. Theme Check reports no schema offences. Not yet exercised in a live Horizon preview: the cart-drawer refresh, visual styling against your colour schemes, and the Function pairing. Check those first on the draft theme.
+Local jsdom suite (28 checks) covers selection, swap, limits, skip, variant availability, fixed pricing, launch gating, one-kit and currency checks, validation, payload and properties, double-submit, API errors, remove/edit, persistence and HTML escaping. Theme Check reports no schema offences. Not yet exercised in a live Horizon preview: the cart-drawer refresh, visual styling against your colour schemes, and the Function pairing. Check those first on the draft theme.
 
 ## Limitations
 

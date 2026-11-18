@@ -69,6 +69,16 @@ const DEFAULT_LABELS = {
   announceLimit: 'You have reached the limit for this category',
   announceStep: '{category}, step {n} of {total}',
   complete: 'Your kit is complete',
+  forCompleteKit: 'for the complete kit',
+  fixedHint: 'One fixed price, whatever you choose.',
+  retailValue: 'Combined retail value',
+  previewNote: 'Kit checkout is not live yet.',
+  testNote: 'Test mode: pricing not yet verified. Do not publish.',
+  belowPrice: 'These items total less than the kit price, so this combination is unavailable. Please change a choice.',
+  wrongCurrency: 'The kit is only available in {currency}.',
+  alreadyKit: 'Your cart already contains a kit. Only one kit can be ordered at a time.',
+  alreadyIn: 'Already in your kit ({category})',
+  cartCheckFailed: 'We could not check your cart. Please try again.',
 };
 
 class KitBuilder extends HTMLElement {
@@ -215,6 +225,10 @@ class KitBuilder extends HTMLElement {
     if (this.cfg.maxTotal && total > this.cfg.maxTotal)
       errors.push({ step: this.cats.length, msg: tpl(this.L.kitMax, { n: this.cfg.maxTotal }) });
     if (!total && !errors.length) errors.push({ step: 0, msg: tpl(this.L.missing, { category: this.cats[0].title, n: 1 }) });
+    if (this.cfg.mode === 'fixed' && total && !errors.length) {
+      const sum = items.reduce((a, it) => a + it.variant.price, 0);
+      if (sum < this.cfg.fixedPrice) errors.push({ step: this.cats.length, msg: this.L.belowPrice });
+    }
     items.forEach((it) => {
       if (!it.variant.available)
         errors.push({ step: this.cats.findIndex((c) => c.id === it.catId), msg: tpl(this.L.unavailable, { product: it.product.title }) });
@@ -229,14 +243,19 @@ class KitBuilder extends HTMLElement {
   pricing() {
     const items = this.items();
     const sum = items.reduce((a, it) => a + it.variant.price, 0);
-    let total = sum;
     const c = this.cfg;
-    if (this.complete && c.mode !== 'none' && sum >= (c.minSpend || 0)) {
-      if (c.mode === 'fixed' && c.fixedPrice > 0 && c.fixedPrice < sum) total = c.fixedPrice;
+    const complete = this.complete;
+    // Fixed price: the displayed kit price never depends on the selected items.
+    if (c.mode === 'fixed') {
+      const showValue = complete && sum > c.fixedPrice;
+      return { fixed: true, sum, total: c.fixedPrice, saving: showValue ? sum - c.fixedPrice : 0, showValue, count: items.length };
+    }
+    let total = sum;
+    if (complete && c.mode !== 'none' && sum >= (c.minSpend || 0)) {
       if (c.mode === 'percent' && c.percentOff > 0) total = Math.round(sum * (1 - c.percentOff / 100));
       if (c.mode === 'amount' && c.amountOff > 0) total = Math.max(0, sum - c.amountOff);
     }
-    return { sum, total, saving: sum - total, count: items.length };
+    return { fixed: false, sum, total, saving: sum - total, showValue: sum !== total, count: items.length };
   }
 
   /* ---------- persistence ---------- */
@@ -317,6 +336,7 @@ class KitBuilder extends HTMLElement {
         ? `<button type="button" class="kb__link" data-action="next">${esc(this.L.skip)}</button>`
         : '<span></span>';
     this.$stage.innerHTML = `
+      ${this.priceBarHtml()}
       <div class="kb__cat-head">
         <p class="kb__eyebrow">${esc(tpl(this.L.stepOf, { n: this.step + 1, total: this.cats.length + 1 }))}</p>
         <h2 tabindex="-1" data-kit-heading>${esc(c.heading || c.title)}</h2>
@@ -456,9 +476,15 @@ class KitBuilder extends HTMLElement {
     if (rule) rule.textContent = `${this.ruleText(c)} · ${tpl(this.L.selectedCount, { count: this.catSelections(c.id).length })}`;
   }
 
+  priceBarHtml() {
+    if (this.cfg.mode !== 'fixed') return '';
+    return `<p class="kb__pricebar"><strong>${this.fmt.format(this.cfg.fixedPrice / 100)}</strong> ${esc(this.L.forCompleteKit)}</p>`;
+  }
+
   reviewHtml() {
     const ok = this.complete;
     return `
+      ${this.priceBarHtml()}
       <div class="kb__cat-head">
         <p class="kb__eyebrow">${esc(tpl(this.L.stepOf, { n: this.cats.length + 1, total: this.cats.length + 1 }))}</p>
         <h2 tabindex="-1" data-kit-heading>${esc(this.L.review)}</h2>
@@ -502,19 +528,32 @@ class KitBuilder extends HTMLElement {
       .join('');
 
     let totals;
-    if (this.cfg.mode === 'none' || !pr.saving) {
+    if (pr.fixed) {
+      totals = `<div class="kb__total"><span>${esc(this.L.kitPrice)}</span><span>${this.fmt.format(pr.total / 100)}</span></div>`;
+      if (pr.showValue && this.cfg.showOriginalValue)
+        totals =
+          `<div><span>${esc(this.L.retailValue)}</span><s>${this.fmt.format(pr.sum / 100)}</s></div>` +
+          `<div class="kb__saving"><span>${esc(this.L.youSave)}</span><span>${this.fmt.format(pr.saving / 100)}</span></div>` +
+          totals;
+      if (!pr.showValue) totals += `<p class="kb__hint">${esc(this.L.fixedHint)}</p>`;
+    } else if (this.cfg.mode === 'none' || !pr.saving) {
       totals = `<div class="kb__total"><span>${esc(this.L.total)}</span><span>${this.fmt.format(pr.total / 100)}</span></div>`;
       if (this.cfg.mode !== 'none' && !this.complete)
         totals += `<p class="kb__hint">${esc(this.L.incompleteHint)}${this.cfg.savingsMessage ? ' ' + esc(this.cfg.savingsMessage) : ''}</p>`;
     } else {
       totals = `${
-        this.cfg.showOriginalValue
-          ? `<div><span>${esc(this.L.original)}</span><s>${this.fmt.format(pr.sum / 100)}</s></div>`
-          : ''
+        this.cfg.showOriginalValue ? `<div><span>${esc(this.L.original)}</span><s>${this.fmt.format(pr.sum / 100)}</s></div>` : ''
       }
         <div class="kb__saving"><span>${esc(this.L.youSave)}</span><span>${this.fmt.format(pr.saving / 100)}</span></div>
         <div class="kb__total"><span>${esc(this.L.kitPrice)}</span><span>${this.fmt.format(pr.total / 100)}</span></div>`;
     }
+    const status = this.cfg.pricingStatus;
+    const banner =
+      status === 'preview'
+        ? `<p class="kb__test" role="note">${esc(this.L.previewNote)}</p>`
+        : status === 'testing'
+        ? `<p class="kb__test" role="note">${esc(this.L.testNote)}</p>`
+        : '';
 
     const errs = this.errors.length
       ? `<ul class="kb__errors" role="alert">${this.errors.map((e) => `<li>${esc(e.msg)}</li>`).join('')}</ul>`
@@ -525,6 +564,8 @@ class KitBuilder extends HTMLElement {
 
     return `<div class="kb__sum">
       <h2>${esc(this.L.yourKit)}</h2>
+      ${pr.fixed ? `<p class="kb__kitprice"><strong>${this.fmt.format(pr.total / 100)}</strong> <span>${esc(this.L.forCompleteKit)}</span></p>` : ''}
+      ${banner}
       <p class="kb__sum-count">${esc(tpl(this.L.itemsSelected, { count: items.length }))}${needed ? ` · ${items.length >= needed && this.complete ? esc(this.L.complete) : ''}` : ''}</p>
       ${forReview ? '' : ''}
       <ul class="kb__sum-groups">${groups}</ul>
@@ -532,7 +573,7 @@ class KitBuilder extends HTMLElement {
       ${errs}${ok}
       <button type="button" class="button kb__add" data-action="add-kit" ${
         this.submitting ? 'aria-busy="true" aria-disabled="true"' : ''
-      }>${esc(this.submitting ? this.L.adding : this.L.addKit)}</button>
+      } ${status === 'preview' ? 'disabled' : ''}>${esc(this.submitting ? this.L.adding : this.L.addKit)}</button>
     </div>`;
   }
 
@@ -654,6 +695,14 @@ class KitBuilder extends HTMLElement {
       return;
     }
     const here = this.catSelections(c.id);
+    if (this.cfg.uniqueAcrossCategories) {
+      const other = this.sel.find((x) => x.productId === p.id && x.catId !== c.id);
+      if (other) {
+        const oc = this.cats.find((x) => x.id === other.catId);
+        this.updateCard(p.id, tpl(this.L.alreadyIn, { category: oc ? oc.title : '' }));
+        return;
+      }
+    }
     const same = here.find((s) => s.productId === p.id);
     if (same && !c.allowDuplicates) {
       if (same.variantId === v.id) {
@@ -725,12 +774,38 @@ class KitBuilder extends HTMLElement {
       this.renderSummary();
       this.announce(errors.map((e) => e.msg).join('. '));
       if (this.$dialog && this.$dialog.open) this.$dialog.close();
-      this.goToErrorStep(errors[0].step);
+      this.goToErrorStep(errors[0].step, errors);
+      return;
+    }
+    if (this.cfg.pricingStatus === 'preview') return;
+    if (this.cfg.kitCurrency && this.cfg.currency !== this.cfg.kitCurrency) {
+      this.errors = [{ step: this.step, msg: tpl(this.L.wrongCurrency, { currency: this.cfg.kitCurrency }) }];
+      this.renderSummary();
       return;
     }
     this.submitting = true;
     this.errors = [];
     this.renderSummary();
+    if (this.cfg.oneKitPerOrder) {
+      try {
+        const root = this.cfg.rootUrl.endsWith('/') ? this.cfg.rootUrl : this.cfg.rootUrl + '/';
+        const cartRes = await fetch(`${root}cart.js`, { headers: { Accept: 'application/json' } });
+        if (!cartRes.ok) throw new Error('cart');
+        const cart = await cartRes.json();
+        if ((cart.items || []).some((i) => i.properties && i.properties._kit_key)) {
+          this.submitting = false;
+          this.errors = [{ step: this.step, msg: this.L.alreadyKit }];
+          this.renderSummary();
+          this.announce(this.L.alreadyKit);
+          return;
+        }
+      } catch (e) {
+        this.submitting = false;
+        this.errors = [{ step: this.step, msg: this.L.cartCheckFailed }];
+        this.renderSummary();
+        return;
+      }
+    }
     const kitId = uid();
     const lines = this.items().map((it) => ({
       id: it.variant.id,
@@ -766,13 +841,10 @@ class KitBuilder extends HTMLElement {
     }
   }
 
-  goToErrorStep(step) {
-    if (step === this.step) {
-      this.render();
-      return;
-    }
-    this.goTo(step);
-    this.renderSummary();
+  goToErrorStep(step, errors) {
+    if (step !== this.step) this.goTo(step);
+    this.errors = errors;
+    this.render();
   }
 
   /** Refresh Horizon's cart drawer and bubble, then open the drawer. Falls back to the cart page. */

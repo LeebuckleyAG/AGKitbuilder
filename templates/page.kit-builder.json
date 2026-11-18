@@ -3,15 +3,67 @@
     "main": {
       "type": "kit-builder",
       "blocks": {
-        "outerwear": { "type": "category", "settings": { "title": "Outerwear", "min": 1, "max": 1 } },
-        "midlayer": { "type": "category", "settings": { "title": "Midlayer", "min": 2, "max": 2 } },
-        "polos": { "type": "category", "settings": { "title": "Polos", "min": 3, "max": 3 } },
-        "trousers": { "type": "category", "settings": { "title": "Trousers", "min": 1, "max": 1 } },
-        "accessories": { "type": "category", "settings": { "title": "Accessories", "min": 2, "max": 2, "required": false } }
+        "jacket": {
+          "type": "category",
+          "settings": {
+            "title": "Jacket or gilet",
+            "min": 1,
+            "max": 1
+          }
+        },
+        "mid": {
+          "type": "category",
+          "settings": {
+            "title": "Midlayer or polo",
+            "min": 1,
+            "max": 1
+          }
+        },
+        "polo": {
+          "type": "category",
+          "settings": {
+            "title": "Additional polo",
+            "min": 1,
+            "max": 1
+          }
+        },
+        "trousers": {
+          "type": "category",
+          "settings": {
+            "title": "Trousers or shorts",
+            "min": 1,
+            "max": 1
+          }
+        },
+        "belt": {
+          "type": "category",
+          "settings": {
+            "title": "Belt or hat",
+            "min": 1,
+            "max": 1
+          }
+        },
+        "socks": {
+          "type": "category",
+          "settings": {
+            "title": "Socks",
+            "min": 1,
+            "max": 1
+          }
+        }
       },
-      "block_order": ["outerwear", "midlayer", "polos", "trousers", "accessories"],
+      "block_order": [
+        "jacket",
+        "mid",
+        "polo",
+        "trousers",
+        "belt",
+        "socks"
+      ],
       "settings": {}
     }
   },
-  "order": ["main"]
+  "order": [
+    "main"
+  ]
 }
