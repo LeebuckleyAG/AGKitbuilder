@@ -1,0 +1,389 @@
+{% comment %}
+  Kit Builder
+  Guided bundle builder. Each "Category" block pulls products from a collection;
+  the customer picks products/variants per category and adds the whole kit to the cart.
+  All behaviour lives in assets/kit-builder.js (<kit-builder> custom element).
+  Pricing: see README.md. Real checkout discounting is applied by a Shopify Function
+  that reads the _kit_key / _kit_id line item properties added by this section.
+{% endcomment %}
+
+{%- liquid
+  assign s = section.settings
+  assign anchor_id = 'kit-builder-' | append: section.id
+  assign max_products = s.products_per_category
+-%}
+
+<kit-builder
+  id="{{ anchor_id }}"
+  class="kb section color-{{ s.color_scheme }}"
+  data-columns="{{ s.columns_desktop }}"
+  data-columns-mobile="{{ s.columns_mobile }}"
+  data-sticky="{{ s.sticky_summary }}"
+  style="--kb-pad-top: {{ s.padding_top }}px; --kb-pad-bottom: {{ s.padding_bottom }}px;"
+>
+  <div class="section-background color-{{ s.color_scheme }}"></div>
+
+  {%- if s.show_hero -%}
+    <div class="kb__hero">
+      <div class="kb__container kb__hero-inner{% if s.hero_image == blank %} kb__hero-inner--no-image{% endif %}">
+        <div class="kb__hero-copy">
+          {%- if s.eyebrow != blank -%}<p class="kb__eyebrow">{{ s.eyebrow }}</p>{%- endif -%}
+          <h2 class="kb__hero-title">{{ s.heading }}</h2>
+          {%- if s.subheading != blank -%}<p class="kb__hero-sub">{{ s.subheading }}</p>{%- endif -%}
+          {%- if s.how_it_works != blank -%}
+            <ol class="kb__how">
+              {%- assign steps = s.how_it_works | newline_to_br | split: '<br />' -%}
+              {%- for step in steps -%}
+                {%- assign step_text = step | strip -%}
+                {%- if step_text != blank -%}<li>{{ step_text }}</li>{%- endif -%}
+              {%- endfor -%}
+            </ol>
+          {%- endif -%}
+          {%- if s.savings_message != blank -%}<p class="kb__savings-pill">{{ s.savings_message }}</p>{%- endif -%}
+          <a class="button kb__cta" href="#{{ anchor_id }}-builder" data-kit-start>{{ s.cta_label }}</a>
+        </div>
+        {%- if s.hero_image != blank -%}
+          <div class="kb__hero-media">
+            {{ s.hero_image | image_url: width: 1400 | image_tag: widths: '600, 900, 1200', sizes: '(min-width: 900px) 50vw, 100vw', loading: 'eager', class: 'kb__hero-img' }}
+          </div>
+        {%- endif -%}
+      </div>
+    </div>
+  {%- endif -%}
+
+  <div class="kb__builder" id="{{ anchor_id }}-builder">
+    <div class="kb__container">
+      {%- if section.blocks.size == 0 -%}
+        <p class="kb__empty">Add category blocks in the theme editor to start building the kit.</p>
+      {%- else -%}
+        {%- if s.show_progress -%}
+          <nav class="kb__progress" aria-label="Kit progress" data-kit-progress></nav>
+        {%- endif -%}
+
+        <div class="kb__layout">
+          <div class="kb__stage" data-kit-stage aria-live="off"></div>
+          <aside class="kb__summary" aria-label="Your kit" data-kit-summary></aside>
+        </div>
+      {%- endif -%}
+    </div>
+
+    <div class="kb__bar" data-kit-bar hidden></div>
+    <dialog class="kb__drawer" data-kit-dialog aria-label="Your kit">
+      <button type="button" class="kb__drawer-close" data-action="close-summary" aria-label="Close">
+        <svg width="20" height="20" viewBox="0 0 20 20" aria-hidden="true" focusable="false"><path d="M4 4l12 12M16 4L4 16" stroke="currentColor" stroke-width="1.5" fill="none"/></svg>
+      </button>
+      <div data-kit-summary></div>
+    </dialog>
+    <p class="kb__sr" role="status" aria-live="polite" data-kit-live></p>
+  </div>
+
+  <script type="application/json" data-kit-config>
+    {
+      "sectionId": {{ section.id | json }},
+      "kitName": {{ s.kit_name | json }},
+      "kitKey": {{ s.kit_key | json }},
+      "currency": {{ cart.currency.iso_code | json }},
+      "locale": {{ request.locale.iso_code | json }},
+      "cartAddUrl": {{ routes.cart_add_url | json }},
+      "cartUrl": {{ routes.cart_url | json }},
+      "rootUrl": {{ routes.root_url | json }},
+      "afterAdd": {{ s.after_add | json }},
+      "minTotal": {{ s.min_kit_size | json }},
+      "maxTotal": {{ s.max_kit_size | json }},
+      "mode": {{ s.pricing_mode | json }},
+      "fixedPrice": {{ s.fixed_price | times: 100 | round | json }},
+      "percentOff": {{ s.percent_off | json }},
+      "amountOff": {{ s.amount_off | times: 100 | round | json }},
+      "minSpend": {{ s.min_spend | times: 100 | round | json }},
+      "savingsMessage": {{ s.savings_message | json }},
+      "showItemPrices": {{ s.show_item_prices | json }},
+      "showOriginalValue": {{ s.show_original_value | json }},
+      "showDetails": {{ s.show_details | json }},
+      "labels": {
+        "addToKit": {{ s.label_add | json }},
+        "update": {{ s.label_update | json }},
+        "selected": {{ s.label_selected | json }},
+        "next": {{ s.label_next | json }},
+        "back": {{ s.label_back | json }},
+        "skip": {{ s.label_skip | json }},
+        "review": {{ s.label_review | json }},
+        "addKit": {{ s.label_add_kit | json }}
+      },
+      "categories": [
+        {%- for block in section.blocks -%}
+          {
+            "id": {{ block.id | json }},
+            "title": {{ block.settings.title | json }},
+            "heading": {{ block.settings.heading | default: block.settings.title | json }},
+            "description": {{ block.settings.description | json }},
+            "min": {{ block.settings.min | json }},
+            "max": {{ block.settings.max | json }},
+            "required": {{ block.settings.required | json }},
+            "allowDuplicates": {{ block.settings.allow_duplicates | json }},
+            "hasCollection": {% if block.settings.collection != blank %}true{% else %}false{% endif %},
+            "image": {% if block.settings.image != blank %}{{ block.settings.image | image_url: width: 900 | json }}{% else %}null{% endif %}
+          }{% unless forloop.last %},{% endunless %}
+        {%- endfor -%}
+      ]
+    }
+  </script>
+
+  {%- for block in section.blocks -%}
+    <script type="application/json" data-kit-products="{{ block.id }}">
+      [
+        {%- if block.settings.collection != blank -%}
+          {%- for product in block.settings.collection.products limit: max_products -%}
+            {{ product | json }}{% unless forloop.last %},{% endunless %}
+          {%- endfor -%}
+        {%- endif -%}
+      ]
+    </script>
+  {%- endfor -%}
+</kit-builder>
+
+<script src="{{ 'kit-builder.js' | asset_url }}" type="module" defer></script>
+
+{% stylesheet %}
+  kit-builder.kb {
+    --kb-gap: clamp(16px, 2vw, 28px);
+    --kb-radius: 2px;
+    --kb-border: color-mix(in srgb, var(--color-foreground, #111) 18%, transparent);
+    --kb-muted: color-mix(in srgb, var(--color-foreground, #111) 62%, transparent);
+    --kb-soft: color-mix(in srgb, var(--color-foreground, #111) 5%, transparent);
+    --kb-accent: var(--color-primary-button-background, var(--color-foreground, #111));
+    --kb-accent-text: var(--color-primary-button-text, var(--color-background, #fff));
+    display: block;
+    position: relative;
+    color: var(--color-foreground, #111);
+    padding-block: var(--kb-pad-top, 48px) var(--kb-pad-bottom, 48px);
+  }
+  kit-builder.kb > .section-background { position: absolute; inset: 0; z-index: -1; }
+  .kb__container { width: 100%; max-width: var(--page-width, 1440px); margin-inline: auto; padding-inline: var(--page-margin, 20px); box-sizing: border-box; }
+  .kb__sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+  .kb :focus-visible { outline: 2px solid var(--kb-accent); outline-offset: 2px; }
+
+  /* Hero */
+  .kb__hero { margin-bottom: clamp(32px, 5vw, 64px); }
+  .kb__hero-inner { display: grid; gap: var(--kb-gap); align-items: center; }
+  @media (min-width: 900px) { .kb__hero-inner:not(.kb__hero-inner--no-image) { grid-template-columns: 1fr 1fr; } }
+  .kb__eyebrow { margin: 0 0 8px; font-size: 0.75rem; letter-spacing: 0.14em; text-transform: uppercase; color: var(--kb-muted); }
+  .kb__hero-title { margin: 0 0 12px; font-family: var(--font-heading--family, inherit); font-size: clamp(2rem, 5vw, 3.5rem); line-height: 1.05; }
+  .kb__hero-sub { margin: 0 0 20px; max-width: 46ch; color: var(--kb-muted); }
+  .kb__how { display: flex; flex-wrap: wrap; gap: 8px 24px; margin: 0 0 20px; padding: 0; list-style: none; counter-reset: kbstep; font-size: 0.9rem; }
+  .kb__how li { counter-increment: kbstep; display: flex; align-items: center; gap: 8px; }
+  .kb__how li::before { content: counter(kbstep); display: grid; place-items: center; width: 22px; height: 22px; border: 1px solid currentColor; border-radius: 50%; font-size: 0.75rem; }
+  .kb__savings-pill { display: inline-block; margin: 0 0 20px; padding: 6px 12px; border: 1px solid var(--kb-border); font-size: 0.8rem; letter-spacing: 0.04em; }
+  .kb__hero-media { aspect-ratio: 4 / 3; overflow: hidden; }
+  .kb__hero-img { width: 100%; height: 100%; object-fit: cover; display: block; }
+
+  /* Progress */
+  .kb__progress ol { display: flex; gap: 0; margin: 0 0 var(--kb-gap); padding: 0; list-style: none; overflow-x: auto; scrollbar-width: none; border-bottom: 1px solid var(--kb-border); }
+  .kb__progress li { flex: 1 0 auto; }
+  .kb__step { all: unset; box-sizing: border-box; display: flex; align-items: center; gap: 8px; width: 100%; min-height: 48px; padding: 8px 16px 8px 0; cursor: pointer; font-size: 0.85rem; color: var(--kb-muted); border-bottom: 2px solid transparent; margin-bottom: -1px; white-space: nowrap; }
+  .kb__step:focus-visible { outline: 2px solid var(--kb-accent); outline-offset: -2px; }
+  .kb__step[aria-current="step"] { color: var(--color-foreground, #111); border-bottom-color: var(--color-foreground, #111); font-weight: 600; }
+  .kb__step-num { display: grid; place-items: center; width: 24px; height: 24px; border: 1px solid currentColor; border-radius: 50%; font-size: 0.75rem; flex: none; }
+  .kb__step[data-state="done"] .kb__step-num { background: var(--kb-accent); border-color: var(--kb-accent); color: var(--kb-accent-text); }
+  .kb__step-count { color: var(--kb-muted); font-weight: 400; }
+
+  /* Layout */
+  .kb__layout { display: grid; gap: var(--kb-gap); align-items: start; }
+  @media (min-width: 1000px) { .kb__layout { grid-template-columns: minmax(0, 1fr) 340px; } }
+  @media (max-width: 999px) { .kb__summary { display: none; } }
+  @media (min-width: 1000px) {
+    kit-builder.kb[data-sticky="true"] .kb__summary { position: sticky; top: calc(var(--header-group-height, 80px) + 16px); max-height: calc(100vh - var(--header-group-height, 80px) - 32px); overflow-y: auto; }
+  }
+
+  /* Category */
+  .kb__cat-head { margin-bottom: 20px; }
+  .kb__cat-head h2 { margin: 0 0 6px; font-family: var(--font-heading--family, inherit); font-size: clamp(1.5rem, 3vw, 2.25rem); outline: none; }
+  .kb__cat-head p { margin: 0; color: var(--kb-muted); max-width: 60ch; }
+  .kb__rule { margin-top: 10px !important; font-size: 0.8rem; letter-spacing: 0.06em; text-transform: uppercase; color: var(--color-foreground, #111) !important; }
+  .kb__grid { display: grid; gap: var(--kb-gap); grid-template-columns: repeat(var(--kb-cols-m, 2), minmax(0, 1fr)); }
+  kit-builder.kb[data-columns-mobile="1"] .kb__grid { --kb-cols-m: 1; }
+  @media (min-width: 700px) { .kb__grid { grid-template-columns: repeat(min(3, var(--kb-cols, 3)), minmax(0, 1fr)); } }
+  @media (min-width: 1000px) { .kb__grid { grid-template-columns: repeat(var(--kb-cols, 3), minmax(0, 1fr)); } }
+  kit-builder.kb[data-columns="2"] .kb__grid { --kb-cols: 2; }
+  kit-builder.kb[data-columns="3"] .kb__grid { --kb-cols: 3; }
+  kit-builder.kb[data-columns="4"] .kb__grid { --kb-cols: 4; }
+
+  /* Card */
+  .kb__card { display: flex; flex-direction: column; border: 1px solid var(--kb-border); background: color-mix(in srgb, var(--color-background, #fff) 100%, transparent); transition: border-color 0.2s; }
+  .kb__card[data-selected="true"] { border-color: var(--color-foreground, #111); box-shadow: inset 0 0 0 1px var(--color-foreground, #111); }
+  .kb__card[data-soldout="true"] .kb__media img { opacity: 0.45; }
+  .kb__media { position: relative; aspect-ratio: 4 / 5; background: var(--kb-soft); overflow: hidden; }
+  .kb__media img { width: 100%; height: 100%; object-fit: cover; display: block; }
+  .kb__check { position: absolute; top: 10px; right: 10px; display: none; place-items: center; width: 28px; height: 28px; border-radius: 50%; background: var(--kb-accent); color: var(--kb-accent-text); }
+  .kb__card[data-selected="true"] .kb__check { display: grid; }
+  .kb__body { display: flex; flex-direction: column; gap: 12px; padding: 14px; flex: 1; }
+  .kb__name { margin: 0; font-size: 0.95rem; font-weight: 500; line-height: 1.3; }
+  .kb__price { margin: 0; font-size: 0.9rem; color: var(--kb-muted); }
+  .kb__price s { margin-right: 6px; }
+  .kb__opt { margin: 0; padding: 0; border: 0; min-width: 0; }
+  .kb__opt legend { padding: 0; margin-bottom: 6px; font-size: 0.75rem; letter-spacing: 0.06em; text-transform: uppercase; color: var(--kb-muted); }
+  .kb__opt-values { display: flex; flex-wrap: wrap; gap: 6px; }
+  .kb__chip { position: relative; }
+  .kb__chip input { position: absolute; inset: 0; opacity: 0; margin: 0; cursor: pointer; }
+  .kb__chip span { display: grid; place-items: center; min-width: 44px; min-height: 44px; padding: 0 12px; border: 1px solid var(--kb-border); font-size: 0.85rem; box-sizing: border-box; }
+  .kb__chip input:checked + span { border-color: var(--color-foreground, #111); background: var(--color-foreground, #111); color: var(--color-background, #fff); }
+  .kb__chip input:focus-visible + span { outline: 2px solid var(--kb-accent); outline-offset: 2px; }
+  .kb__chip input:disabled { cursor: not-allowed; }
+  .kb__chip input:disabled + span { color: var(--kb-muted); text-decoration: line-through; background: var(--kb-soft); }
+  .kb__details { font-size: 0.85rem; color: var(--kb-muted); }
+  .kb__details summary { cursor: pointer; color: var(--color-foreground, #111); min-height: 24px; }
+  .kb__details p { margin: 8px 0 0; }
+  .kb__error { margin: 0; font-size: 0.8rem; color: #b42318; }
+  .kb__pick { margin-top: auto; width: 100%; min-height: 48px; }
+  .kb__pick[aria-pressed="true"] { background: transparent; color: var(--color-foreground, #111); border: 1px solid var(--color-foreground, #111); }
+  .kb__pick[disabled] { opacity: 0.5; cursor: not-allowed; }
+
+  /* Nav */
+  .kb__nav { display: flex; justify-content: space-between; gap: 12px; margin-top: 28px; padding-top: 20px; border-top: 1px solid var(--kb-border); }
+  .kb__nav .button { min-height: 48px; }
+  .kb__link { all: unset; cursor: pointer; text-decoration: underline; text-underline-offset: 3px; font-size: 0.85rem; min-height: 44px; display: inline-flex; align-items: center; }
+  .kb__link:focus-visible { outline: 2px solid var(--kb-accent); outline-offset: 2px; }
+
+  /* Summary */
+  .kb__sum { border: 1px solid var(--kb-border); padding: 20px; background: var(--color-background, #fff); }
+  .kb__sum h2 { margin: 0 0 4px; font-family: var(--font-heading--family, inherit); font-size: 1.25rem; }
+  .kb__sum-count { margin: 0 0 16px; font-size: 0.85rem; color: var(--kb-muted); }
+  .kb__sum-groups { list-style: none; margin: 0 0 16px; padding: 0; display: grid; gap: 14px; }
+  .kb__sum-groups h3 { margin: 0 0 6px; font-size: 0.75rem; letter-spacing: 0.08em; text-transform: uppercase; color: var(--kb-muted); display: flex; justify-content: space-between; }
+  .kb__sum-items { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }
+  .kb__sum-item { display: grid; grid-template-columns: 48px 1fr auto; gap: 10px; align-items: center; }
+  .kb__sum-thumb { width: 48px; height: 60px; object-fit: cover; background: var(--kb-soft); }
+  .kb__sum-name { font-size: 0.85rem; line-height: 1.25; }
+  .kb__sum-var { display: block; color: var(--kb-muted); font-size: 0.75rem; }
+  .kb__sum-actions { display: flex; flex-direction: column; align-items: flex-end; }
+  .kb__sum-actions .kb__link { font-size: 0.75rem; min-height: 28px; }
+  .kb__none { margin: 0; font-size: 0.85rem; color: var(--kb-muted); }
+  .kb__totals { border-top: 1px solid var(--kb-border); padding-top: 14px; display: grid; gap: 6px; font-size: 0.9rem; }
+  .kb__totals div { display: flex; justify-content: space-between; gap: 12px; }
+  .kb__totals .kb__total { font-weight: 600; font-size: 1.05rem; }
+  .kb__totals .kb__saving { color: #067647; }
+  .kb__hint { margin: 8px 0 0; font-size: 0.8rem; color: var(--kb-muted); }
+  .kb__errors { margin: 12px 0 0; padding: 0; list-style: none; font-size: 0.85rem; color: #b42318; }
+  .kb__success { margin: 12px 0 0; font-size: 0.9rem; }
+  .kb__add { width: 100%; margin-top: 16px; min-height: 52px; }
+  .kb__add[aria-disabled="true"] { opacity: 0.6; }
+
+  /* Mobile bar + drawer */
+  .kb__bar { position: fixed; inset: auto 0 0 0; z-index: 20; display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 10px var(--page-margin, 16px) calc(10px + env(safe-area-inset-bottom)); background: var(--color-background, #fff); border-top: 1px solid var(--kb-border); box-shadow: 0 -6px 20px rgb(0 0 0 / 0.06); }
+  .kb__bar[hidden] { display: none; }
+  .kb__bar-info { display: grid; font-size: 0.8rem; line-height: 1.3; }
+  .kb__bar-info strong { font-size: 1rem; }
+  .kb__bar .button { min-height: 48px; padding-inline: 20px; }
+  @media (min-width: 1000px) { .kb__bar { display: none !important; } }
+  .kb__drawer { width: min(100vw, 460px); max-width: 100vw; height: 100dvh; max-height: 100dvh; margin: 0 0 0 auto; padding: 16px; border: 0; background: var(--color-background, #fff); color: var(--color-foreground, #111); box-sizing: border-box; overflow-y: auto; }
+  .kb__drawer::backdrop { background: rgb(0 0 0 / 0.4); }
+  .kb__drawer-close { all: unset; cursor: pointer; display: grid; place-items: center; width: 44px; height: 44px; margin-left: auto; }
+  .kb__drawer-close:focus-visible { outline: 2px solid var(--kb-accent); }
+  .kb__drawer .kb__sum { border: 0; padding: 0; }
+  .kb__empty { padding: 32px 0; color: var(--kb-muted); }
+  .kb__review-grid { display: grid; gap: 20px; }
+
+  @media (prefers-reduced-motion: reduce) { .kb * { transition: none !important; animation: none !important; } }
+  @media (max-width: 999px) { kit-builder.kb { padding-bottom: calc(var(--kb-pad-bottom, 48px) + 72px); } }
+{% endstylesheet %}
+
+{% schema %}
+{
+  "name": "Kit builder",
+  "tag": "section",
+  "class": "section-kit-builder",
+  "settings": [
+    { "type": "header", "content": "Hero" },
+    { "type": "checkbox", "id": "show_hero", "label": "Show intro hero", "default": true },
+    { "type": "text", "id": "eyebrow", "label": "Eyebrow", "default": "Build your own kit" },
+    { "type": "text", "id": "heading", "label": "Heading", "default": "Build Your Kit" },
+    { "type": "textarea", "id": "subheading", "label": "Subheading", "default": "Choose your favourite pieces, category by category, and save on the complete set." },
+    { "type": "textarea", "id": "how_it_works", "label": "How it works", "info": "One step per line.", "default": "Pick a piece from each category\nChoose your size and colour\nAdd the complete kit to your bag" },
+    { "type": "text", "id": "savings_message", "label": "Savings message", "info": "Only shown if you have a matching discount set up (see README).", "default": "Save when you complete your kit" },
+    { "type": "text", "id": "cta_label", "label": "Button label", "default": "Build your kit" },
+    { "type": "image_picker", "id": "hero_image", "label": "Image" },
+
+    { "type": "header", "content": "Appearance" },
+    { "type": "color_scheme", "id": "color_scheme", "label": "Color scheme", "default": "scheme-1" },
+    { "type": "range", "id": "padding_top", "label": "Top padding", "min": 0, "max": 120, "step": 4, "unit": "px", "default": 40 },
+    { "type": "range", "id": "padding_bottom", "label": "Bottom padding", "min": 0, "max": 120, "step": 4, "unit": "px", "default": 40 },
+
+    { "type": "header", "content": "Kit rules" },
+    { "type": "text", "id": "kit_name", "label": "Kit name", "info": "Shown on cart lines as 'Kit'.", "default": "My Kit" },
+    { "type": "text", "id": "kit_key", "label": "Kit key", "info": "Unique ID used by the checkout discount (e.g. fazer-champion-pack). Don't change after launch.", "default": "my-kit" },
+    { "type": "range", "id": "min_kit_size", "label": "Minimum kit size", "info": "0 = determined by categories.", "min": 0, "max": 30, "step": 1, "default": 0 },
+    { "type": "range", "id": "max_kit_size", "label": "Maximum kit size", "info": "0 = unlimited.", "min": 0, "max": 30, "step": 1, "default": 0 },
+
+    { "type": "header", "content": "Pricing" },
+    {
+      "type": "select", "id": "pricing_mode", "label": "Bundle pricing mode",
+      "info": "Display only. The matching discount must exist in Shopify; see README.",
+      "options": [
+        { "value": "none", "label": "Individual product pricing" },
+        { "value": "fixed", "label": "Fixed bundle price" },
+        { "value": "percent", "label": "Percentage discount" },
+        { "value": "amount", "label": "Fixed amount discount" }
+      ],
+      "default": "none"
+    },
+    { "type": "text", "id": "fixed_price", "label": "Fixed bundle price", "info": "In store currency, e.g. 99.99", "default": "99.99" },
+    { "type": "range", "id": "percent_off", "label": "Percentage discount", "min": 0, "max": 80, "step": 1, "unit": "%", "default": 10 },
+    { "type": "text", "id": "amount_off", "label": "Amount discount", "info": "In store currency, e.g. 20", "default": "20" },
+    { "type": "text", "id": "min_spend", "label": "Minimum spend for discount", "info": "In store currency. 0 = none", "default": "0" },
+    { "type": "checkbox", "id": "show_item_prices", "label": "Show prices on product cards", "default": true },
+    { "type": "checkbox", "id": "show_original_value", "label": "Show original value", "default": true },
+
+    { "type": "header", "content": "Layout and UX" },
+    { "type": "range", "id": "columns_desktop", "label": "Desktop columns", "min": 2, "max": 4, "step": 1, "default": 3 },
+    { "type": "select", "id": "columns_mobile", "label": "Mobile columns", "options": [ { "value": "1", "label": "1" }, { "value": "2", "label": "2" } ], "default": "2" },
+    { "type": "range", "id": "products_per_category", "label": "Max products per category", "min": 4, "max": 50, "step": 2, "default": 24 },
+    { "type": "checkbox", "id": "sticky_summary", "label": "Sticky summary (desktop)", "default": true },
+    { "type": "checkbox", "id": "show_progress", "label": "Show progress indicator", "default": true },
+    { "type": "checkbox", "id": "show_details", "label": "Show product details", "default": true },
+    {
+      "type": "select", "id": "after_add", "label": "After adding kit",
+      "options": [ { "value": "drawer", "label": "Open cart drawer" }, { "value": "cart", "label": "Go to cart page" } ],
+      "default": "drawer"
+    },
+
+    { "type": "header", "content": "Labels" },
+    { "type": "text", "id": "label_add", "label": "Add button", "default": "Add to kit" },
+    { "type": "text", "id": "label_update", "label": "Update button", "default": "Update selection" },
+    { "type": "text", "id": "label_selected", "label": "Selected button", "default": "Selected" },
+    { "type": "text", "id": "label_next", "label": "Next button", "default": "Next" },
+    { "type": "text", "id": "label_back", "label": "Back button", "default": "Back" },
+    { "type": "text", "id": "label_skip", "label": "Skip button", "default": "Skip this step" },
+    { "type": "text", "id": "label_review", "label": "Review step name", "default": "Review kit" },
+    { "type": "text", "id": "label_add_kit", "label": "Add kit to cart button", "default": "Add kit to cart" }
+  ],
+  "blocks": [
+    {
+      "type": "category",
+      "name": "Category",
+      "settings": [
+        { "type": "text", "id": "title", "label": "Category name", "info": "Shown in the progress indicator.", "default": "Category" },
+        { "type": "text", "id": "heading", "label": "Heading", "info": "Defaults to the category name." },
+        { "type": "textarea", "id": "description", "label": "Description" },
+        { "type": "collection", "id": "collection", "label": "Collection" },
+        { "type": "range", "id": "min", "label": "Minimum selections", "min": 0, "max": 10, "step": 1, "default": 1 },
+        { "type": "range", "id": "max", "label": "Maximum selections", "min": 1, "max": 10, "step": 1, "default": 1 },
+        { "type": "checkbox", "id": "required", "label": "Required", "info": "Optional categories can be skipped.", "default": true },
+        { "type": "checkbox", "id": "allow_duplicates", "label": "Allow the same product more than once", "default": false },
+        { "type": "image_picker", "id": "image", "label": "Category image" }
+      ]
+    }
+  ],
+  "max_blocks": 12,
+  "presets": [
+    {
+      "name": "Kit builder",
+      "blocks": [
+        { "type": "category", "settings": { "title": "Outerwear", "min": 1, "max": 1 } },
+        { "type": "category", "settings": { "title": "Midlayer", "min": 2, "max": 2 } },
+        { "type": "category", "settings": { "title": "Polos", "min": 3, "max": 3 } },
+        { "type": "category", "settings": { "title": "Trousers", "min": 1, "max": 1 } },
+        { "type": "category", "settings": { "title": "Accessories", "min": 2, "max": 2, "required": false } }
+      ]
+    }
+  ]
+}
+{% endschema %}

@@ -1,0 +1,17 @@
+{
+  "sections": {
+    "main": {
+      "type": "kit-builder",
+      "blocks": {
+        "outerwear": { "type": "category", "settings": { "title": "Outerwear", "min": 1, "max": 1 } },
+        "midlayer": { "type": "category", "settings": { "title": "Midlayer", "min": 2, "max": 2 } },
+        "polos": { "type": "category", "settings": { "title": "Polos", "min": 3, "max": 3 } },
+        "trousers": { "type": "category", "settings": { "title": "Trousers", "min": 1, "max": 1 } },
+        "accessories": { "type": "category", "settings": { "title": "Accessories", "min": 2, "max": 2, "required": false } }
+      },
+      "block_order": ["outerwear", "midlayer", "polos", "trousers", "accessories"],
+      "settings": {}
+    }
+  },
+  "order": ["main"]
+}
